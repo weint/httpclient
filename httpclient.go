@@ -139,6 +139,16 @@ func (c *HttpClientRequest) Payload(data map[string]string) *HttpClientRequest {
 	return c
 }
 
+// Json adds body from interface in to request.
+func (c *HttpClientRequest) Json(data interface{}) *HttpClientRequest {
+	buf, err := json.Marshal(data)
+	if err != nil {
+		return c
+	}
+	c.Body(buf)
+	return c
+}
+
 // Body adds request raw body.
 // it supports string and []byte.
 func (c *HttpClientRequest) Body(data interface{}) *HttpClientRequest {
