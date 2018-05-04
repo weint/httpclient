@@ -22,7 +22,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -47,13 +46,25 @@ type HttpClientRequest struct {
 
 func NewHttpClientRequest(method, req_url string) *HttpClientRequest {
 
-	var req http.Request
-	req.Method = method
-	req.Header = http.Header{}
+	u, err := url.Parse(req_url) // Just url.Parse (url is shadowed for godoc).
+	if err != nil {
+		return nil
+	}
+	u.Host = removeEmptyPort(u.Host)
+
+	req := &http.Request{
+		Method:     method,
+		URL:        u,
+		Proto:      "HTTP/1.1",
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header:     http.Header{},
+		Host:       u.Host,
+	}
 	req.Header.Set("User-Agent", defaultUserAgent)
 
 	return &HttpClientRequest{
-		Req:     &req,
+		Req:     req,
 		url:     req_url,
 		timeout: defaultTimeout,
 		params:  map[string]string{},
@@ -78,9 +89,20 @@ func (c *HttpClientRequest) Header(key, value string) *HttpClientRequest {
 	return c
 }
 
-// SetCookie add cookie into request.
+// SetCookie set cookie into request.
 func (c *HttpClientRequest) SetCookie(cookie *http.Cookie) *HttpClientRequest {
 	c.Req.Header.Add("Cookie", cookie.String())
+	return c
+}
+
+// AddCookie add cookie into request.
+func (c *HttpClientRequest) AddCookie(cookie *http.Cookie) *HttpClientRequest {
+	s := cookie.String()
+	if ck := c.Req.Header.Get("Cookie"); ck != "" {
+		c.Req.Header.Set("Cookie", ck+"; "+s)
+	} else {
+		c.Req.Header.Set("Cookie", s)
+	}
 	return c
 }
 
@@ -196,12 +218,12 @@ func (c *HttpClientRequest) Response() (*http.Response, error) {
 		c.Body(paramBody)
 	}
 
-	url, err := url.Parse(c.url)
+	u, err := url.Parse(c.url) // Just url.Parse (url is shadowed for godoc).
 	if err != nil {
 		return nil, err
 	}
-	url.Path = filepath.Clean(url.Path)
-	c.Req.URL = url
+	u.Host = removeEmptyPort(u.Host)
+	c.Req.URL = u
 
 	if c.SignHandler != nil {
 		c.SignHandler(c.Req)
@@ -296,4 +318,17 @@ func (c *HttpClientRequest) ReplyJson(v interface{}) error {
 
 func (c *HttpClientRequest) ReplyHeader(key string) string {
 	return c.rsp.Header.Get(key)
+}
+
+// Given a string of the form "host", "host:port", or "[ipv6::address]:port",
+// return true if the string includes a port.
+func hasPort(s string) bool { return strings.LastIndex(s, ":") > strings.LastIndex(s, "]") }
+
+// removeEmptyPort strips the empty port in ":port" to ""
+// as mandated by RFC 3986 Section 6.2.3.
+func removeEmptyPort(host string) string {
+	if hasPort(host) {
+		return strings.TrimSuffix(host, ":")
+	}
+	return host
 }
